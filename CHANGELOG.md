@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Patching: rename keys holding inline tables or arrays of inline tables without throwing, preserving their values and formatting.
+- Patching: distinguish dates and times from strings containing the same ISO text when comparing values, so a type change is not skipped or mistaken for a rename.
 
 ## [3.3.2] - 2026-10-31
 

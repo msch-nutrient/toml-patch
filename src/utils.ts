@@ -306,11 +306,12 @@ export function stableStringify(object: any): string {
         pending.push({ value: value[index] });
       }
     } else if (isTemporal(value)) {
-    // Temporal objects use toString() for a stable ISO representation
-      output.push(JSON.stringify(value.toString()));
+      // Tag date/time values so they cannot collide with strings containing
+      // the same ISO text. A collision can turn a type change into a rename,
+      // which preserves the original value instead of writing the new one.
+      output.push('date:' + JSON.stringify(value.toString()));
     } else if (isDate(value)) {
-    // Custom Date subclasses use toISOString()
-      output.push(JSON.stringify(value.toISOString()));
+      output.push('date:' + JSON.stringify(value.toISOString()));
     } else if (typeof value === 'bigint') {
       output.push(value.toString() + 'n');
     } else if (typeof value === 'number' && !Number.isFinite(value)) {

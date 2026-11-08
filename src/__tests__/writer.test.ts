@@ -5,11 +5,63 @@ import {
   generateKeyValue,
   generateInlineItem,
   generateString,
-  generateDocument
+  generateDocument,
+  generateKey,
+  generateInteger
 } from '../generate';
 import { TomlFormat } from '../toml-format';
-import { Document, KeyValue, String as StringNode, NodeType } from '../cst';
+import { Document, KeyValue, InlineTable, String as StringNode, NodeType } from '../cst';
 import parseTOML from '../parse-toml';
+
+describe('replacement ownership for inline-table-valued rows', () => {
+  function fixture() {
+    const document = generateDocument();
+    document.items = [...parseTOML('holder = { a = 1 }\n')];
+    document.loc.end = { ...document.items[0].loc.end };
+    const row = document.items[0] as KeyValue;
+    return { document, row, value: row.value as InlineTable };
+  }
+
+  test('replaces the row key without replacing the value or its members', () => {
+    const { document, row, value } = fixture();
+    const member = value.items[0];
+
+    replace(document, row, row.key, generateKey(['renamed']));
+    applyWrites(document);
+
+    expect(row.value).toBe(value);
+    expect(value.items[0]).toBe(member);
+    expect(row.dirty).toBe(true);
+    expect(toTOML(document.items, TomlFormat.default())).toBe('renamed = { a = 1 }\n');
+  });
+
+  test('still replaces an inline-table member through the row', () => {
+    const { document, row, value } = fixture();
+    const key = row.key;
+    const member = generateInlineItem(generateKeyValue(['b'], generateInteger(2)));
+
+    replace(document, row, value.items[0], member);
+    applyWrites(document);
+
+    expect(row.key).toBe(key);
+    expect(row.value).toBe(value);
+    expect(value.items[0]).toBe(member);
+    expect(toTOML(document.items, TomlFormat.default())).toBe('holder = { b = 2 }\n');
+  });
+
+  test('still replaces the entire inline-table value', () => {
+    const { document, row } = fixture();
+    const key = row.key;
+    const value = generateInteger(2);
+
+    replace(document, row, row.value, value);
+    applyWrites(document);
+
+    expect(row.key).toBe(key);
+    expect(row.value).toBe(value);
+    expect(toTOML(document.items, TomlFormat.default())).toBe('holder = 2\n');
+  });
+});
 
 test('it should insert elements into empty inline array', () => {
   const inline_array = generateInlineArray();

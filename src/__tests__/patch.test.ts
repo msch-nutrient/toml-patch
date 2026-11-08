@@ -1,5 +1,5 @@
 import patch from '../patch';
-import { parse } from '../';
+import { parse, TomlDocument } from '../';
 import { stringify } from '../';
 import { LocalDate, LocalTime, LocalDateTime, OffsetDateTime } from '../parse-toml';
 import { example } from '../__fixtures__';
@@ -12491,6 +12491,29 @@ describe('escape sequence case', () => {
 // regressions cover container values whose keys must be replaced independently of
 // their values and of the generated document's table/array-of-tables representation.
 describe('renaming a key whose value is a container', () => {
+  for (const newline of ['\n', '\r\n']) {
+    test.each([
+      ['{\n a = 0x10, # a\n b = 2,\n}', { a: 16, b: 2 }, { a: 17, b: 2 }],
+      ['[{ a = 0x10 }, { a = 0x20 }]', [{ a: 16 }, { a: 32 }], [{ a: 17 }, { a: 32 }]]
+    ])(`keeps a renamed %s editable across document patches (${JSON.stringify(newline)})`, (literal, value, changed) => {
+      const source = ('# leading\nholder = ' + literal + ' # trailing\nother = 3\n').replaceAll('\n', newline);
+      const expected = ('# leading\nrenamed = ' + literal + ' # trailing\nother = 3\n').replaceAll('\n', newline);
+      const updated = { renamed: value, other: 3 };
+      const document = new TomlDocument(source);
+
+      document.patch(updated);
+      expect(document.toTomlString).toBe(expected);
+      expect(document.toJsObject).toEqual(updated);
+
+      document.patch(updated);
+      expect(document.toTomlString).toBe(expected);
+
+      document.patch({ renamed: changed, other: 4 });
+      expect(document.toTomlString).toBe(expected.replace('0x10', '0x11').replace('other = 3', 'other = 4'));
+      expect(document.toJsObject).toEqual({ renamed: changed, other: 4 });
+    });
+  }
+
   test('renames an unchanged inline table from the reported reproduction', () => {
     const source = 'name = "Main"\nlanes = ["web", "server"]\n\n[nudges]\napi = {y = 2}\n';
     const original = parse(source);
@@ -12506,15 +12529,17 @@ describe('renaming a key whose value is a container', () => {
     ['[{ a = 0x10 }, { a = 0x20 }]', [{ a: 16 }, { a: 32 }]]
   ] as const) {
     test.each(['x', 'a longer key'])('preserves comments and value formatting for %s holding ' + literal, (key) => {
-      const source = '# keep leading\nholder = ' + literal + ' # keep trailing\nother = 3\n';
-      const updated = { [key]: value, other: 4 };
+      const source = '# keep leading\nholder = ' + literal + ' # keep trailing\n# other\nother = 3\n';
+      const updated = { other: 4, [key]: value };
       const rawKey = key === 'x' ? key : '"' + key + '"';
 
       for (const updateOrder of [false, true]) {
         const result = patch(source, updated, { updateOrder });
 
         expect(parse(result)).toEqual(updated);
-        expect(result).toBe('# keep leading\n' + rawKey + ' = ' + literal + ' # keep trailing\nother = 4\n');
+        const renamedRow = '# keep leading\n' + rawKey + ' = ' + literal + ' # keep trailing\n';
+        const siblingRow = '# other\nother = 4\n';
+        expect(result).toBe(updateOrder ? siblingRow + renamedRow : renamedRow + siblingRow);
       }
     });
   }

@@ -1091,6 +1091,20 @@ function applyChanges(
   updatedJs: any = undefined
 ): Document {
   const convertedUpdated = updatedJs ?? toJS(updated.items, '', { temporal });
+  // An added array of objects may be represented by several [[key]] entries,
+  // with no node at the array's own path. Apply those entries through the
+  // normal indexed Add path. This also handles remove/add pairs whose values
+  // really changed, rather than misclassifying them as a key-only rename.
+  changes = changes.flatMap((change): Change[] => {
+    if (!isAdd(change)) return [change];
+    let value: any = convertedUpdated;
+    for (const segment of change.path) value = value?.[segment];
+    if (!Array.isArray(value) || tryFindByPath(updated, change.path)) return [change];
+    const firstEntry = tryFindByPath(updated, change.path.concat(0));
+    if (!firstEntry || !isTableArray(firstEntry)) return [change];
+    return value.map((_, index) => ({ ...change, path: change.path.concat(index) }));
+  });
+
   // Track AOT paths whose entries were all removed so we can insert empty arrays. The full
   // path keeps separate parent AOT entries distinct, while a nested key like [[a.b]] still
   // carries enough information to be re-materialised as `a.b = []`.
@@ -4163,13 +4177,12 @@ function applyChanges(
         | undefined;
 
       // parseJS may render a root inline array of tables as [[sections]], so
-      // the array's key has no exact match in the generated document. Only the
-      // key changes: derive it from the existing row and keep its value intact.
+      // the array itself has no exact match in the generated document. Its
+      // first entry owns the replacement key; reuse that key without replacing
+      // the original inline array. Only accept an actual table-array entry.
       if (!replacement && isKeyValue(parent) && isInlineArray(parent.value)) {
-        replacement = {
-          ...parent,
-          key: generateKey([...parent.key.value.slice(0, -1), change.to], format.escapeSequenceUpperCase)
-        };
+        const firstEntry = tryFindByPath(updated, targetPath.concat(0));
+        if (firstEntry && isTableArray(firstEntry)) replacement = firstEntry;
       }
       if (!replacement) replacement = findByPath(updated, targetPath) as KeyValue | Table | TableArray | InlineItem<KeyValue>;
 
