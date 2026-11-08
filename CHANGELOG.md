@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Patching: rename keys holding inline tables or arrays of inline tables without throwing, preserving their values and formatting.
+
 ## [3.3.2] - 2026-10-31
 
 ### Fixed

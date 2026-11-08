@@ -12488,11 +12488,47 @@ describe('escape sequence case', () => {
 // A rename is inferred when one key disappears and another key appears holding an
 // equal value. The rename edits the key in place and never rebuilds the value, so the
 // value's shape should not matter. Primitives and arrays of primitives already work. These
-// container values all throw while the replacement key is resolved, which aborts the
-// whole patch instead of renaming the key. Each test is marked `.fails` until fixed.
+// regressions cover container values whose keys must be replaced independently of
+// their values and of the generated document's table/array-of-tables representation.
 describe('renaming a key whose value is a container', () => {
-  test.fails('renames a key holding a single-line inline table', () => {
-    // Throws: Item not found in parent for replace
+  test('renames an unchanged inline table from the reported reproduction', () => {
+    const source = 'name = "Main"\nlanes = ["web", "server"]\n\n[nudges]\napi = {y = 2}\n';
+    const original = parse(source);
+    const updated = { ...original, nudges: { backend: { y: 2 } } };
+    const result = patch(source, updated);
+
+    expect(parse(result)).toEqual(updated);
+    expect(result).toBe('name = "Main"\nlanes = ["web", "server"]\n\n[nudges]\nbackend = {y = 2}\n');
+  });
+
+  for (const [literal, value] of [
+    ['{ a = 0x10 }', { a: 16 }],
+    ['[{ a = 0x10 }, { a = 0x20 }]', [{ a: 16 }, { a: 32 }]]
+  ] as const) {
+    test.each(['x', 'a longer key'])('preserves comments and value formatting for %s holding ' + literal, (key) => {
+      const source = '# keep leading\nholder = ' + literal + ' # keep trailing\nother = 3\n';
+      const updated = { [key]: value, other: 4 };
+      const rawKey = key === 'x' ? key : '"' + key + '"';
+
+      for (const updateOrder of [false, true]) {
+        const result = patch(source, updated, { updateOrder });
+
+        expect(parse(result)).toEqual(updated);
+        expect(result).toBe('# keep leading\n' + rawKey + ' = ' + literal + ' # keep trailing\nother = 4\n');
+      }
+    });
+  }
+
+  test('renames an inline-table-valued member inside an inline table', () => {
+    const source = 'outer = { holder = { a = 1 }, other = 2 }\n';
+    const updated = { outer: { renamed: { a: 1 }, other: 2 } };
+    const result = patch(source, updated);
+
+    expect(parse(result)).toEqual(updated);
+    expect(result).toBe('outer = { renamed = { a = 1 }, other = 2 }\n');
+  });
+
+  test('renames a key holding a single-line inline table', () => {
     const source = 'holder = { a = 1 }\n';
     const result = patch(source, { renamed: { a: 1 } });
 
@@ -12500,8 +12536,7 @@ describe('renaming a key whose value is a container', () => {
     expect(result).toBe('renamed = { a = 1 }\n');
   });
 
-  test.fails('renames a key holding a multi-line inline table', () => {
-    // Throws: Item not found in parent for replace
+  test('renames a key holding a multi-line inline table', () => {
     const source = dedent`
       holder = {
         a = 1,
@@ -12519,8 +12554,7 @@ describe('renaming a key whose value is a container', () => {
     ` + '\n');
   });
 
-  test.fails('renames a key holding a nested inline table', () => {
-    // Throws: Item not found in parent for replace
+  test('renames a key holding a nested inline table', () => {
     const source = 'holder = { inner = { a = 1 } }\n';
     const result = patch(source, { renamed: { inner: { a: 1 } } });
 
@@ -12528,8 +12562,7 @@ describe('renaming a key whose value is a container', () => {
     expect(result).toBe('renamed = { inner = { a = 1 } }\n');
   });
 
-  test.fails('renames an inline-table-valued row inside a section', () => {
-    // Throws: Item not found in parent for replace
+  test('renames an inline-table-valued row inside a section', () => {
     const source = dedent`
       [t]
       holder = { a = 1 }
@@ -12543,8 +12576,7 @@ describe('renaming a key whose value is a container', () => {
     ` + '\n');
   });
 
-  test.fails('renames an inline-table-valued row inside an array of tables', () => {
-    // Throws: Item not found in parent for replace
+  test('renames an inline-table-valued row inside an array of tables', () => {
     const source = dedent`
       [[t]]
       holder = { a = 1 }
@@ -12558,8 +12590,7 @@ describe('renaming a key whose value is a container', () => {
     ` + '\n');
   });
 
-  test.fails('renames a key holding an array of inline tables', () => {
-    // Throws: Node not found at renamed
+  test('renames a key holding an array of inline tables', () => {
     // A rename inside a section already works, so the root-level key is the
     // specific gap here. The inline array is preserved, it is not rewritten as
     // [[renamed]] sections.

@@ -4152,13 +4152,27 @@ function applyChanges(
       }
 
       if (!parent) parent = findByPath(original, sourcePath) as KeyValue | Table | TableArray | InlineItem<KeyValue>;
-      let replacement = findByPath(updated, change.path.concat(change.to)) as
+      if (hasItem(parent)) parent = parent.item;
+
+      const targetPath = change.path.concat(change.to);
+      let replacement = tryFindByPath(updated, targetPath) as
         | KeyValue
         | Table
         | TableArray
-        | InlineItem<KeyValue>;
+        | InlineItem<KeyValue>
+        | undefined;
 
-      if (hasItem(parent)) parent = parent.item;
+      // parseJS may render a root inline array of tables as [[sections]], so
+      // the array's key has no exact match in the generated document. Only the
+      // key changes: derive it from the existing row and keep its value intact.
+      if (!replacement && isKeyValue(parent) && isInlineArray(parent.value)) {
+        replacement = {
+          ...parent,
+          key: generateKey([...parent.key.value.slice(0, -1), change.to], format.escapeSequenceUpperCase)
+        };
+      }
+      if (!replacement) replacement = findByPath(updated, targetPath) as KeyValue | Table | TableArray | InlineItem<KeyValue>;
+
       if (hasItem(replacement)) replacement = replacement.item;
 
       // A KeyValue holds its Key directly, while a [table]/[[array]] wraps it in a
